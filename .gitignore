@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+
+# C++ Compiler output
+*.obj
+*.lib
+*.exp
+*.dll
+
+# IDE and temporary files
+.vs/
+*.user
+*.suo
