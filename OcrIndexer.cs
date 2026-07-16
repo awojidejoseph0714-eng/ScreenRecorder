@@ -72,14 +72,14 @@ namespace ScreenRecorder
             }
         }
 
-        public void Initialize(string outputDir)
+        public void Initialize(string bufferDir)
         {
-            if (!Directory.Exists(outputDir))
+            if (!Directory.Exists(bufferDir))
             {
-                Directory.CreateDirectory(outputDir);
+                Directory.CreateDirectory(bufferDir);
             }
 
-            _dbPath = Path.Combine(outputDir, "ocr_index.db");
+            _dbPath = Path.Combine(bufferDir, "ocr_index.db");
             InitializeDatabase();
 
             // Start worker thread
@@ -427,6 +427,8 @@ namespace ScreenRecorder
             var results = new List<SearchResult>();
             if (string.IsNullOrWhiteSpace(queryText)) return results;
 
+            var rawResults = new List<SearchResult>();
+
             try
             {
                 using var conn = new SqliteConnection($"Data Source={_dbPath}");
@@ -440,10 +442,9 @@ namespace ScreenRecorder
                     JOIN segments s ON f.segment_id = s.id
                     WHERE ocr_fts MATCH $query
                     ORDER BY s.start_time DESC, f.offset_seconds ASC
-                    LIMIT 200;";
+                    LIMIT 400;";
 
                 using var cmd = new SqliteCommand(searchSql, conn);
-                // Sanitize and query (clean up special characters if needed, or wrap in quotes for phrase matching)
                 cmd.Parameters.AddWithValue("$query", queryText);
 
                 using var reader = cmd.ExecuteReader();
@@ -457,7 +458,7 @@ namespace ScreenRecorder
                     DateTime timestamp = DateTimeOffset.FromUnixTimeMilliseconds(startTimeMs).DateTime.ToLocalTime()
                                          .AddSeconds(offsetSec);
 
-                    results.Add(new SearchResult
+                    rawResults.Add(new SearchResult
                     {
                         FilePath = filepath,
                         OffsetSeconds = offsetSec,
@@ -469,8 +470,76 @@ namespace ScreenRecorder
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error searching SQLite DB: {ex.Message}");
+                return results;
             }
+
+            // --- Smart Grouping / Deduplication Algorithm ---
+            // Sort raw results by FilePath, then by OffsetSeconds (ascending)
+            rawResults.Sort((a, b) =>
+            {
+                int fileComp = string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal);
+                if (fileComp != 0) return fileComp;
+                return a.OffsetSeconds.CompareTo(b.OffsetSeconds);
+            });
+
+            SearchResult? currentGroup = null;
+            double groupStartOffset = 0;
+            double groupEndOffset = 0;
+
+            foreach (var item in rawResults)
+            {
+                if (currentGroup == null)
+                {
+                    currentGroup = item;
+                    groupStartOffset = item.OffsetSeconds;
+                    groupEndOffset = item.OffsetSeconds;
+                }
+                else if (item.FilePath == currentGroup.FilePath && item.OffsetSeconds - groupEndOffset <= 8.0)
+                {
+                    // Contiguous match (within 8 seconds), extend the current range
+                    groupEndOffset = item.OffsetSeconds;
+                }
+                else
+                {
+                    // Finalize previous group
+                    FinalizeGroup(results, currentGroup, groupStartOffset, groupEndOffset);
+
+                    // Start new group
+                    currentGroup = item;
+                    groupStartOffset = item.OffsetSeconds;
+                    groupEndOffset = item.OffsetSeconds;
+                }
+            }
+
+            if (currentGroup != null)
+            {
+                FinalizeGroup(results, currentGroup, groupStartOffset, groupEndOffset);
+            }
+
+            // Sort finalized grouped results by Timestamp descending (latest matches first)
+            results.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+
             return results;
+        }
+
+        private void FinalizeGroup(List<SearchResult> list, SearchResult baseResult, double startOffset, double endOffset)
+        {
+            string timeRangeLabel = $"[{FormatOffset(startOffset)} - {FormatOffset(endOffset)}]";
+            string snippet = baseResult.Text.Length > 160 ? baseResult.Text.Substring(0, 160) + "..." : baseResult.Text;
+
+            list.Add(new SearchResult
+            {
+                FilePath = baseResult.FilePath,
+                OffsetSeconds = startOffset, // Clicking jumps to the start of the text appearance
+                Text = $"{timeRangeLabel}\n{snippet}",
+                Timestamp = baseResult.Timestamp
+            });
+        }
+
+        private string FormatOffset(double seconds)
+        {
+            TimeSpan t = TimeSpan.FromSeconds(seconds);
+            return $"{(int)t.TotalMinutes:D2}:{t.Seconds:D2}";
         }
 
         public void Dispose()

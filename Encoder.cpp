@@ -21,6 +21,7 @@ extern "C" {
     __declspec(dllexport) bool InitializeEncoder(const wchar_t* filePath, int width, int height, int fps);
     __declspec(dllexport) bool WriteFrame(const BYTE* pixelData, int frameIndex);
     __declspec(dllexport) void CloseEncoder();
+    __declspec(dllexport) bool ClipVideo(const wchar_t** filePaths, const double* fileStartOffsets, int fileCount, double clipStartSec, double clipEndSec, int width, int height, int fps, const wchar_t* outputFilePath);
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
@@ -184,4 +185,88 @@ void CloseEncoder() {
         g_pSinkWriter->Finalize();
         g_pSinkWriter = nullptr;
     }
+}
+
+bool ClipVideo(const wchar_t** filePaths, const double* fileStartOffsets, int fileCount, double clipStartSec, double clipEndSec, int width, int height, int fps, const wchar_t* outputFilePath) {
+    HRESULT hr = S_OK;
+
+    ComPtr<IMFSinkWriter> pSinkWriter = nullptr;
+    DWORD outStreamIndex = 0;
+    hr = MFCreateSinkWriterFromURL(outputFilePath, NULL, NULL, &pSinkWriter);
+    if (FAILED(hr)) return false;
+
+    // Use the first source file's media type directly for the stream output and input
+    ComPtr<IMFSourceReader> pFirstReader = nullptr;
+    hr = MFCreateSourceReaderFromURL(filePaths[0], NULL, &pFirstReader);
+    if (FAILED(hr)) return false;
+
+    ComPtr<IMFMediaType> pSrcType = nullptr;
+    hr = pFirstReader->GetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM, &pSrcType);
+    if (FAILED(hr)) return false;
+
+    hr = pSinkWriter->AddStream(pSrcType.Get(), &outStreamIndex);
+    if (FAILED(hr)) return false;
+
+    hr = pSinkWriter->SetInputMediaType(outStreamIndex, pSrcType.Get(), NULL);
+    if (FAILED(hr)) return false;
+
+    hr = pSinkWriter->BeginWriting();
+    if (FAILED(hr)) return false;
+
+    bool hasSetActualStart = false;
+    double actualClipStartSec = clipStartSec;
+
+    for (int i = 0; i < fileCount; i++) {
+        ComPtr<IMFSourceReader> pReader = nullptr;
+        hr = MFCreateSourceReaderFromURL(filePaths[i], NULL, &pReader);
+        if (FAILED(hr)) continue;
+
+        // Select first video stream
+        hr = pReader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
+        hr = pReader->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
+        if (FAILED(hr)) continue;
+
+        // Do not request decoding (remuxing/stream copying)
+
+        while (true) {
+            DWORD streamIndex = 0;
+            DWORD flags = 0;
+            LONGLONG timestamp = 0;
+            ComPtr<IMFSample> pSample = nullptr;
+
+            hr = pReader->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0, &streamIndex, &flags, &timestamp, &pSample);
+            if (FAILED(hr)) break;
+            if (flags & MF_SOURCE_READERF_ENDOFSTREAM) break;
+
+            if (pSample != nullptr) {
+                double sampleSec = (double)timestamp / 10000000.0;
+                double absTimeSec = fileStartOffsets[i] + sampleSec;
+
+                // Retrieve keyframe info to align the first sample on a keyframe
+                UINT32 isCleanPoint = 0;
+                pSample->GetUINT32(MFSampleExtension_CleanPoint, &isCleanPoint);
+
+                if (!hasSetActualStart) {
+                    if (isCleanPoint && absTimeSec >= clipStartSec - 3.0) {
+                        actualClipStartSec = absTimeSec;
+                        hasSetActualStart = true;
+                    }
+                }
+
+                if (hasSetActualStart) {
+                    if (absTimeSec <= clipEndSec) {
+                        // Set adjusted sample time relative to actual start
+                        LONGLONG adjustedTime = (LONGLONG)((absTimeSec - actualClipStartSec) * 10000000.0);
+                        hr = pSample->SetSampleTime(adjustedTime);
+                        if (SUCCEEDED(hr)) {
+                            pSinkWriter->WriteSample(outStreamIndex, pSample.Get());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pSinkWriter->Finalize();
+    return true;
 }

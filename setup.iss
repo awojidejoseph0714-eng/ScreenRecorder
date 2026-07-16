@@ -31,7 +31,7 @@ Name: "{commondesktop}\Screen Recorder"; Filename: "{app}\ScreenRecorder.exe"; T
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "ScreenRecorder"; \
-    ValueData: """{app}\ScreenRecorder.exe"""; \
+    ValueData: """{app}\ScreenRecorder.exe"" --background"; \
     Flags: uninsdeletevalue; Tasks: autostart
 
 [Run]

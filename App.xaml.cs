@@ -27,6 +27,19 @@ namespace ScreenRecorder
         [DllImport("Encoder.dll", EntryPoint = "CloseEncoder", CallingConvention = CallingConvention.Cdecl)]
         private static extern void CloseEncoder();
 
+        [DllImport("Encoder.dll", EntryPoint = "ClipVideo", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+        public static extern bool ClipVideo(
+            string[] filePaths,
+            double[] fileStartOffsets,
+            int fileCount,
+            double clipStartSec,
+            double clipEndSec,
+            int width,
+            int height,
+            int fps,
+            string outputFilePath
+        );
+
         // Win32 Foreground APIs
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
@@ -58,16 +71,34 @@ namespace ScreenRecorder
         // Rolling buffer cleanups
         private System.Threading.Timer? _cleanupTimer;
 
+        private static Mutex? _mutex;
+        private bool _isExiting = false;
+        private ReplayWindow? _replayWindow = null;
+        private bool _hasShownMinimizeTip = false;
+
+        public bool IsExiting => _isExiting;
+        public bool IsRecordingActive => _isRecordingActive;
+
         protected override void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
+
+            // Enforce single instance
+            bool createdNew;
+            _mutex = new Mutex(true, "ScreenRecorderV2-SingleInstanceMutex", out createdNew);
+            if (!createdNew)
+            {
+                MessageBox.Show("Screen Recorder is already running in the background.", "Already Running", MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
 
             // 1. Load configuration settings
             _settings = AppSettings.Load();
 
             // 2. Initialize database and local OCR Indexer
             _ocrIndexer = new OcrIndexer();
-            _ocrIndexer.Initialize(_settings.OutputDir);
+            _ocrIndexer.Initialize(_settings.BufferDir);
 
             // 3. Initialize visual indicator and Tray Icon
             InitializeTrayIcon();
@@ -75,11 +106,50 @@ namespace ScreenRecorder
             // 4. Register global hotkeys
             InitializeHotkeys();
 
-            // 5. Start continuous rolling recording (standard DVR behavior)
-            StartRecording();
+            // 5. Check first-run agreement
+            if (!_settings.HasAcceptedTerms)
+            {
+                var firstRun = new FirstRunWindow(_settings);
+                if (firstRun.ShowDialog() == true)
+                {
+                    // Start capture manually on onboarding completion
+                    StartRecording();
+                    OpenReplayWindow();
+                }
+                else
+                {
+                    // Exit if they declined onboarding
+                    ExitApplication();
+                    return;
+                }
+            }
+            else
+            {
+                // Check command line arguments for autostart
+                bool autostart = e.Args.Contains("--background") || e.Args.Contains("/autostart");
+                if (autostart)
+                {
+                    // Start capture silently in tray
+                    StartRecording();
+                }
+                else
+                {
+                    // Launch player dashboard
+                    OpenReplayWindow();
+                }
+            }
 
             // 6. Start 30-second rolling buffer cleanup timer
             _cleanupTimer = new System.Threading.Timer(CleanupBufferCallback, null, 10000, 30000);
+        }
+
+        public void ShowMinimizeTrayBalloon()
+        {
+            if (!_hasShownMinimizeTip && _notifyIcon != null)
+            {
+                _notifyIcon.ShowBalloonTip(3000, "Screen Recorder Active", "The application is still running in the system tray.", ToolTipIcon.Info);
+                _hasShownMinimizeTip = true;
+            }
         }
 
         private void InitializeTrayIcon()
@@ -183,7 +253,7 @@ namespace ScreenRecorder
             }
         }
 
-        private void StartRecording()
+        public void StartRecording()
         {
             if (_isRecordingActive) return;
 
@@ -223,7 +293,7 @@ namespace ScreenRecorder
             UpdateTrayIcon(false);
         }
 
-        private void StopRecording()
+        public void StopRecording()
         {
             if (!_isRecordingActive) return;
 
@@ -247,7 +317,7 @@ namespace ScreenRecorder
             UpdateTrayIcon(true);
         }
 
-        private void ToggleRecordingState()
+        public void ToggleRecordingState()
         {
             if (_isRecordingActive)
             {
@@ -288,14 +358,14 @@ namespace ScreenRecorder
         {
             CloseCurrentSegment();
 
-            if (!Directory.Exists(_settings.OutputDir))
+            if (!Directory.Exists(_settings.BufferDir))
             {
-                Directory.CreateDirectory(_settings.OutputDir);
+                Directory.CreateDirectory(_settings.BufferDir);
             }
 
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             string fileName = $"Recording_{timestamp}.mp4";
-            _currentSegmentFile = Path.Combine(_settings.OutputDir, fileName);
+            _currentSegmentFile = Path.Combine(_settings.BufferDir, fileName);
             _currentSegmentStart = DateTime.UtcNow;
             _currentSegmentFrameIndex = 0;
 
@@ -549,7 +619,7 @@ namespace ScreenRecorder
             }
         }
 
-        private void OpenSettingsWindow()
+        public void OpenSettingsWindow()
         {
             // Open settings in dispatcher thread
             Dispatcher.Invoke(() =>
@@ -567,38 +637,64 @@ namespace ScreenRecorder
                     // Reload output directory and refresh OCR indexer location if changed
                     _ocrIndexer.Dispose();
                     _ocrIndexer = new OcrIndexer();
-                    _ocrIndexer.Initialize(_settings.OutputDir);
+                    _ocrIndexer.Initialize(_settings.BufferDir);
 
                     StartRecording();
+                }
+
+                // If player is open, refresh settings reference
+                if (_replayWindow != null)
+                {
+                    _replayWindow.ReloadSettings();
                 }
             });
         }
 
-        private void OpenReplayWindow()
+        public void OpenReplayWindow()
         {
             Dispatcher.Invoke(() =>
             {
-                // Open the Replay and Search UI
-                var replayWindow = new ReplayWindow(_settings, _ocrIndexer);
-                replayWindow.Show();
+                if (_replayWindow == null)
+                {
+                    _replayWindow = new ReplayWindow(_settings, _ocrIndexer);
+                    _replayWindow.Closed += (s, e) => _replayWindow = null;
+                    _replayWindow.Show();
+                }
+                else
+                {
+                    _replayWindow.Show();
+                    _replayWindow.Activate();
+                    if (_replayWindow.WindowState == WindowState.Minimized)
+                    {
+                        _replayWindow.WindowState = WindowState.Normal;
+                    }
+                }
             });
         }
 
         private void OpenRecordingsFolder()
         {
-            if (Directory.Exists(_settings.OutputDir))
+            if (Directory.Exists(_settings.SavedDir))
             {
-                Process.Start("explorer.exe", _settings.OutputDir);
+                Process.Start("explorer.exe", _settings.SavedDir);
             }
             else
             {
-                MessageBox.Show("Recordings directory does not exist yet.", "Folder Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Saved clips folder does not exist yet.", "Folder Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
-        private void ExitApplication()
+        public void ExitApplication()
         {
-            StopRecording();
+            _isExiting = true;
+            if (_replayWindow != null)
+            {
+                try
+                {
+                    _replayWindow.Close();
+                }
+                catch { }
+            }
 
             _cleanupTimer?.Dispose();
             _ocrIndexer.Dispose();

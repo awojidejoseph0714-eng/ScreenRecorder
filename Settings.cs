@@ -8,7 +8,9 @@ namespace ScreenRecorder
     public class AppSettings
     {
         public int BufferHours { get; set; } = 24;
-        public string OutputDir { get; set; } = "";
+        public string BufferDir { get; set; } = "";
+        public string SavedDir { get; set; } = "";
+        public bool HasAcceptedTerms { get; set; } = false;
         public List<string> ExcludedProcesses { get; set; } = new List<string>();
         public bool EnableOcr { get; set; } = true;
         public string SelectedMonitor { get; set; } = "Primary";
@@ -71,14 +73,23 @@ namespace ScreenRecorder
 
         private void EnsureDefaults()
         {
-            if (string.IsNullOrEmpty(OutputDir))
+            if (string.IsNullOrEmpty(BufferDir))
+            {
+                BufferDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ScreenRecorderV2",
+                    "Buffer"
+                );
+            }
+
+            if (string.IsNullOrEmpty(SavedDir))
             {
                 string videosPath = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
                 if (string.IsNullOrEmpty(videosPath))
                 {
                     videosPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Videos");
                 }
-                OutputDir = Path.Combine(videosPath, "RecordingsV2");
+                SavedDir = Path.Combine(videosPath, "ScreenRecorder");
             }
 
             if (ExcludedProcesses == null)

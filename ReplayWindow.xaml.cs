@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,9 +11,19 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using MessageBox = System.Windows.MessageBox;
+using Button = System.Windows.Controls.Button;
+using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
+using Application = System.Windows.Application;
 
 namespace ScreenRecorder
 {
+    public class SavedClipItem
+    {
+        public string Name { get; set; } = "";
+        public string FilePath { get; set; } = "";
+        public DateTime CreationTime { get; set; }
+    }
+
     public partial class ReplayWindow : Window
     {
         private readonly AppSettings _settings;
@@ -29,6 +40,10 @@ namespace ScreenRecorder
         private bool _isDraggingSlider = false;
         private bool _isPaused = false;
 
+        // Clip Range selection markers
+        private double _markStartVal = -1;
+        private double _markEndVal = -1;
+
         public ReplayWindow(AppSettings settings, OcrIndexer ocrIndexer)
         {
             InitializeComponent();
@@ -37,8 +52,9 @@ namespace ScreenRecorder
 
             InitializePlayer();
             LoadTimelineData();
+            RefreshSavedClipsList();
 
-            // Select Search Tab by default
+            // Default to OCR Search tab
             SelectTab(true);
         }
 
@@ -59,7 +75,6 @@ namespace ScreenRecorder
             drawingGroup.Children.Add(_videoDrawing);
             VideoPlayerDrawingImage.Drawing = drawingGroup;
 
-            // Timer to update scrubber
             _timer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromMilliseconds(100)
@@ -73,7 +88,7 @@ namespace ScreenRecorder
             _segments = _ocrIndexer.GetSegments();
             if (_segments.Count == 0)
             {
-                LblCurrentPlayTime.Text = "No recordings found.";
+                LblCurrentPlayTime.Text = "No rolling recordings found yet.";
                 SldTimeline.IsEnabled = false;
                 return;
             }
@@ -89,16 +104,18 @@ namespace ScreenRecorder
             SldTimeline.Value = 0;
             SldTimeline.IsEnabled = true;
 
-            // Set start and end labels
             var startLocal = DateTimeOffset.FromUnixTimeMilliseconds(_oldestTimeMs).DateTime.ToLocalTime();
             var endLocal = DateTimeOffset.FromUnixTimeMilliseconds(_newestTimeMs).DateTime.ToLocalTime();
             LblTimelineStart.Text = startLocal.ToString("t");
             LblTimelineEnd.Text = endLocal.ToString("t");
 
-            // Load Pinned list
-            RefreshPinnedList();
+            // Reset markers
+            _markStartVal = -1;
+            _markEndVal = -1;
+            SldTimeline.SelectionStart = 0;
+            SldTimeline.SelectionEnd = 0;
+            UpdateClipRangeLabel();
 
-            // Start playing the latest segment by default
             PlayLatestSegment();
         }
 
@@ -113,7 +130,6 @@ namespace ScreenRecorder
         {
             if (!File.Exists(segment.FilePath))
             {
-                // File might have been deleted, search next or prompt
                 Debug.WriteLine($"Recording file not found: {segment.FilePath}");
                 return;
             }
@@ -134,31 +150,17 @@ namespace ScreenRecorder
                 BdrPausedOverlay.Visibility = Visibility.Visible;
                 BtnPlayPause.Content = "▶ Play";
             }
-
-            UpdatePinButtonState();
         }
 
         private void Player_MediaEnded(object? sender, EventArgs e)
         {
             if (_currentSegment == null) return;
 
-            // Find next segment in chronological order
             int index = _segments.FindIndex(s => s.Id == _currentSegment.Id);
             if (index != -1 && index + 1 < _segments.Count)
             {
                 var nextSeg = _segments[index + 1];
-                // Gap handling: if next segment starts after current segment ends
-                long gapMs = nextSeg.StartTime - _currentSegment.EndTime;
-                if (gapMs > 2000)
-                {
-                    // There was a pause gap. Let's just switch and start playing next segment from 0
-                    LoadSegment(nextSeg, 0);
-                }
-                else
-                {
-                    // Seamless next segment
-                    LoadSegment(nextSeg, 0);
-                }
+                LoadSegment(nextSeg, 0);
             }
             else
             {
@@ -171,12 +173,23 @@ namespace ScreenRecorder
 
         private void Player_MediaOpened(object? sender, EventArgs e)
         {
-            // Adjust video dimensions to avoid stretching
             double videoW = _player.NaturalVideoWidth;
             double videoH = _player.NaturalVideoHeight;
             if (videoW > 0 && videoH > 0)
             {
                 _videoDrawing.Rect = new Rect(0, 0, videoW, videoH);
+            }
+
+            if (_currentSegment == null)
+            {
+                // Playback of standalone saved clip: update scrubber boundaries
+                double totalSec = _player.NaturalDuration.HasTimeSpan ? _player.NaturalDuration.TimeSpan.TotalSeconds : 100;
+                SldTimeline.Minimum = 0;
+                SldTimeline.Maximum = totalSec;
+                SldTimeline.Value = 0;
+                SldTimeline.IsEnabled = true;
+                LblTimelineStart.Text = "00:00";
+                LblTimelineEnd.Text = _player.NaturalDuration.HasTimeSpan ? _player.NaturalDuration.TimeSpan.ToString(@"mm\:ss") : "--:--";
             }
         }
 
@@ -187,21 +200,32 @@ namespace ScreenRecorder
 
         private void Timer_Tick(object? sender, EventArgs e)
         {
-            if (_isDraggingSlider || _currentSegment == null || _segments.Count == 0) return;
+            UpdateRecordButtonState();
 
-            double elapsedSec = (_currentSegment.StartTime - _oldestTimeMs) / 1000.0 + _player.Position.TotalSeconds;
-            SldTimeline.Value = elapsedSec;
+            if (_isDraggingSlider) return;
 
-            // Update Current Play Time label
-            var currentClock = DateTimeOffset.FromUnixTimeMilliseconds(_currentSegment.StartTime)
-                                .DateTime.ToLocalTime().Add(_player.Position);
-            LblCurrentPlayTime.Text = currentClock.ToString("F");
+            if (_currentSegment != null)
+            {
+                double elapsedSec = (_currentSegment.StartTime - _oldestTimeMs) / 1000.0 + _player.Position.TotalSeconds;
+                SldTimeline.Value = elapsedSec;
+
+                var currentClock = DateTimeOffset.FromUnixTimeMilliseconds(_currentSegment.StartTime)
+                                    .DateTime.ToLocalTime().Add(_player.Position);
+                LblCurrentPlayTime.Text = currentClock.ToString("F");
+            }
+            else
+            {
+                // Playback of standalone clip
+                SldTimeline.Value = _player.Position.TotalSeconds;
+                string elapsedStr = _player.Position.ToString(@"mm\:ss");
+                string totalStr = _player.NaturalDuration.HasTimeSpan ? _player.NaturalDuration.TimeSpan.ToString(@"mm\:ss") : "--:--";
+                LblCurrentPlayTime.Text = $"Clip: {elapsedStr} / {totalStr}";
+            }
         }
 
         private void SldTimeline_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             if (!_isDraggingSlider) return;
-
             SeekToTimelineSeconds(e.NewValue);
         }
 
@@ -218,17 +242,21 @@ namespace ScreenRecorder
 
         private void SeekToTimelineSeconds(double totalSeconds)
         {
+            if (_currentSegment == null)
+            {
+                // Standalone clip seek
+                _player.Position = TimeSpan.FromSeconds(totalSeconds);
+                return;
+            }
+
             if (_segments.Count == 0) return;
 
             long targetTimeMs = _oldestTimeMs + (long)(totalSeconds * 1000);
-            
-            // Find which segment covers this timestamp
             var segment = _segments.FirstOrDefault(s => targetTimeMs >= s.StartTime && targetTimeMs <= s.EndTime);
             
             if (segment != null)
             {
                 double offset = (targetTimeMs - segment.StartTime) / 1000.0;
-                
                 if (_currentSegment?.Id != segment.Id)
                 {
                     LoadSegment(segment, offset);
@@ -240,7 +268,7 @@ namespace ScreenRecorder
             }
             else
             {
-                // We are in a gap (exclusion period). Look for the NEXT available segment
+                // Look for next segment if we hit a gap
                 var nextSeg = _segments.FirstOrDefault(s => s.StartTime >= targetTimeMs);
                 if (nextSeg != null)
                 {
@@ -253,8 +281,6 @@ namespace ScreenRecorder
 
         private void PlayPause_Click(object sender, RoutedEventArgs e)
         {
-            if (_currentSegment == null) return;
-
             if (_isPaused)
             {
                 _player.Play();
@@ -293,7 +319,15 @@ namespace ScreenRecorder
 
         private void ShiftPlaybackPosition(double seconds)
         {
-            if (_currentSegment == null) return;
+            if (_currentSegment == null)
+            {
+                double target = _player.Position.TotalSeconds + seconds;
+                if (target < 0) target = 0;
+                double max = _player.NaturalDuration.HasTimeSpan ? _player.NaturalDuration.TimeSpan.TotalSeconds : 100;
+                if (target > max) target = max;
+                _player.Position = TimeSpan.FromSeconds(target);
+                return;
+            }
 
             double currentSec = (_currentSegment.StartTime - _oldestTimeMs) / 1000.0 + _player.Position.TotalSeconds;
             double targetSec = currentSec + seconds;
@@ -316,12 +350,10 @@ namespace ScreenRecorder
 
         private void ExitButton_Click(object sender, RoutedEventArgs e)
         {
-            _player.Close();
-            _timer.Stop();
-            Close();
+            this.Close();
         }
 
-        // Tab Switching
+        // Tab Handling
         private void SearchTab_Click(object sender, RoutedEventArgs e)
         {
             SelectTab(true);
@@ -330,35 +362,38 @@ namespace ScreenRecorder
         private void PinnedTab_Click(object sender, RoutedEventArgs e)
         {
             SelectTab(false);
+            RefreshSavedClipsList();
         }
 
         private void SelectTab(bool showSearch)
         {
             if (showSearch)
             {
-                BtnSearchTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x45, 0x47, 0x5A));
-                BtnSearchTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xCD, 0xD6, 0xF4));
-                BtnPinnedTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x31, 0x32, 0x44));
-                BtnPinnedTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xA6, 0xAD, 0xC8));
+                BtnSearchTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x44, 0x44, 0x44));
+                BtnSearchTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF));
+                BtnPinnedTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33));
+                BtnPinnedTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
 
                 GridSearchTab.Visibility = Visibility.Visible;
                 GridPinnedTab.Visibility = Visibility.Collapsed;
             }
             else
             {
-                BtnPinnedTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x45, 0x47, 0x5A));
-                BtnPinnedTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xCD, 0xD6, 0xF4));
-                BtnSearchTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x31, 0x32, 0x44));
-                BtnSearchTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xA6, 0xAD, 0xC8));
+                BtnPinnedTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x44, 0x44, 0x44));
+                BtnPinnedTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xFF, 0xFF));
+                BtnSearchTab.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x33, 0x33, 0x33));
+                BtnSearchTab.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
 
                 GridSearchTab.Visibility = Visibility.Collapsed;
                 GridPinnedTab.Visibility = Visibility.Visible;
             }
         }
 
-        // OCR Search Handler
+        // FTS OCR Searching
         private void SearchQuery_KeyUp(object sender, System.Windows.Input.KeyEventArgs e)
         {
+            if (e.Key != Key.Enter) return;
+
             string query = TxtSearchQuery.Text.Trim();
             if (string.IsNullOrEmpty(query))
             {
@@ -366,7 +401,6 @@ namespace ScreenRecorder
                 return;
             }
 
-            // Run search query in SQLite database
             var results = _ocrIndexer.Search(query);
             LstSearchResults.ItemsSource = results;
         }
@@ -376,137 +410,252 @@ namespace ScreenRecorder
             var selected = LstSearchResults.SelectedItem as SearchResult;
             if (selected == null) return;
 
-            // Find segment
             var seg = _segments.FirstOrDefault(s => s.FilePath == selected.FilePath);
             if (seg != null)
             {
-                // Update scrubber and load
                 double totalTimelineSec = (seg.StartTime - _oldestTimeMs) / 1000.0 + selected.OffsetSeconds;
                 SldTimeline.Value = totalTimelineSec;
                 LoadSegment(seg, selected.OffsetSeconds);
             }
         }
 
-        // Pinning Moment Controls
-        private void RefreshPinnedList()
+        // Saved Clips Operations
+        public void RefreshSavedClipsList()
         {
-            var pinned = _segments.Where(s => s.IsPinned).ToList();
-            LstPinnedMoments.ItemsSource = pinned;
-        }
-
-        private void UpdatePinButtonState()
-        {
-            if (_currentSegment == null) return;
-            BtnPinMoment.Content = _currentSegment.IsPinned ? "📌 Unpin Segment" : "📌 Pin Segment";
-            BtnPinMoment.Background = _currentSegment.IsPinned ? 
-                new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x45, 0x47, 0x5A)) : 
-                new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xF3, 0x8B, 0xA8));
-        }
-
-        private void PinMoment_Click(object sender, RoutedEventArgs e)
-        {
-            if (_currentSegment == null) return;
-
-            bool isCurrentlyPinned = _currentSegment.IsPinned;
-            string oldPath = _currentSegment.FilePath;
-            string dir = Path.GetDirectoryName(oldPath) ?? _settings.OutputDir;
-            string oldName = Path.GetFileName(oldPath);
-
-            string newName;
-            if (isCurrentlyPinned)
-            {
-                // Unpin: remove pinned_ prefix
-                newName = oldName.StartsWith("pinned_") ? oldName.Substring(7) : oldName;
-            }
-            else
-            {
-                // Pin: add pinned_ prefix
-                newName = oldName.StartsWith("pinned_") ? oldName : "pinned_" + oldName;
-            }
-
-            string newPath = Path.Combine(dir, newName);
-
             try
             {
-                if (File.Exists(oldPath))
+                if (!Directory.Exists(_settings.SavedDir))
                 {
-                    File.Move(oldPath, newPath);
+                    Directory.CreateDirectory(_settings.SavedDir);
                 }
 
-                _currentSegment.FilePath = newPath;
-                _currentSegment.IsPinned = !isCurrentlyPinned;
+                var files = Directory.GetFiles(_settings.SavedDir, "*.mp4")
+                    .Select(f => new SavedClipItem
+                    {
+                        Name = Path.GetFileName(f),
+                        FilePath = f,
+                        CreationTime = File.GetCreationTime(f)
+                    })
+                    .OrderByDescending(f => f.CreationTime)
+                    .ToList();
 
-                // Update SQLite database state
-                _ocrIndexer.PinSegment(oldPath, !isCurrentlyPinned);
-                // Also update the filepath in SQLite
-                UpdateFilePathInDb(oldPath, newPath);
-
-                // Reload timeline to sync files
-                LoadTimelineData();
-
-                // Seek player back to current position
-                double curPosSec = _player.Position.TotalSeconds;
-                LoadSegment(_currentSegment, curPosSec);
+                LstPinnedMoments.ItemsSource = files;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to rename file: {ex.Message}", "Pinning Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Debug.WriteLine($"Failed to load saved clips list: {ex.Message}");
             }
         }
 
-        private void UpdateFilePathInDb(string oldPath, string newPath)
+        private void PlaySavedClip_Click(object sender, RoutedEventArgs e)
         {
-            try
+            var btn = sender as Button;
+            var item = btn?.DataContext as SavedClipItem;
+            if (item != null && File.Exists(item.FilePath))
             {
-                string dbPath = Path.Combine(_settings.OutputDir, "ocr_index.db");
-                using var conn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
-                conn.Open();
-                using var cmd = new Microsoft.Data.Sqlite.SqliteCommand("UPDATE segments SET filepath = $newPath WHERE filepath = $oldPath", conn);
-                cmd.Parameters.AddWithValue("$newPath", newPath);
-                cmd.Parameters.AddWithValue("$oldPath", oldPath);
-                cmd.ExecuteNonQuery();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to update filename in database: {ex.Message}");
+                _currentSegment = null; // playing standalone clip
+                _player.Open(new Uri(item.FilePath));
+                _player.Play();
+                _isPaused = false;
+                BdrPausedOverlay.Visibility = Visibility.Collapsed;
+                BtnPlayPause.Content = "⏸ Pause";
             }
         }
 
         private void LstPinnedMoments_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            var selected = LstPinnedMoments.SelectedItem as SegmentInfo;
-            if (selected == null) return;
-
-            double totalTimelineSec = (selected.StartTime - _oldestTimeMs) / 1000.0;
-            SldTimeline.Value = totalTimelineSec;
-            LoadSegment(selected, 0);
+            var selected = LstPinnedMoments.SelectedItem as SavedClipItem;
+            if (selected != null && File.Exists(selected.FilePath))
+            {
+                _currentSegment = null;
+                _player.Open(new Uri(selected.FilePath));
+                _player.Play();
+                _isPaused = false;
+                BdrPausedOverlay.Visibility = Visibility.Collapsed;
+                BtnPlayPause.Content = "⏸ Pause";
+            }
         }
 
-        private void ExportPinned_Click(object sender, RoutedEventArgs e)
+        private void OpenSavedFolder_Click(object sender, RoutedEventArgs e)
         {
-            // Find segment bound to the clicked button's context
-            var button = sender as System.Windows.Controls.Button;
-            var segment = button?.DataContext as SegmentInfo;
-            if (segment == null || !File.Exists(segment.FilePath)) return;
-
-            var saveDialog = new Microsoft.Win32.SaveFileDialog
+            if (Directory.Exists(_settings.SavedDir))
             {
-                FileName = Path.GetFileName(segment.FilePath).Replace("pinned_", ""),
-                Filter = "MP4 Video (*.mp4)|*.mp4",
-                Title = "Export Pinned Segment"
+                Process.Start("explorer.exe", _settings.SavedDir);
+            }
+        }
+
+        // Range Clipping Logic (Keyframes)
+        private void MarkStart_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentSegment == null) return; // Only allow clipping from rolling DVR buffer
+            _markStartVal = SldTimeline.Value;
+            SldTimeline.SelectionStart = _markStartVal;
+            UpdateClipRangeLabel();
+        }
+
+        private void MarkEnd_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentSegment == null) return;
+            _markEndVal = SldTimeline.Value;
+            SldTimeline.SelectionEnd = _markEndVal;
+            UpdateClipRangeLabel();
+        }
+
+        private void UpdateClipRangeLabel()
+        {
+            if (_markStartVal < 0 && _markEndVal < 0)
+            {
+                LblClipRange.Text = "Select range by marking keyframes";
+                return;
+            }
+
+            string startStr = _markStartVal >= 0 ? FormatTimelineTime(_markStartVal) : "--:--:--";
+            string endStr = _markEndVal >= 0 ? FormatTimelineTime(_markEndVal) : "--:--:--";
+
+            if (_markStartVal >= 0 && _markEndVal >= 0)
+            {
+                double duration = _markEndVal - _markStartVal;
+                if (duration < 0)
+                {
+                    LblClipRange.Text = $"⚠️ End before Start! [{startStr} - {endStr}]";
+                }
+                else
+                {
+                    LblClipRange.Text = $"Selected: [{startStr} - {endStr}] ({duration:F0}s)";
+                }
+            }
+            else
+            {
+                LblClipRange.Text = $"Selected: [{startStr} - {endStr}]";
+            }
+        }
+
+        private string FormatTimelineTime(double offsetSec)
+        {
+            var dt = DateTimeOffset.FromUnixTimeMilliseconds(_oldestTimeMs).DateTime.ToLocalTime().AddSeconds(offsetSec);
+            return dt.ToString("HH:mm:ss");
+        }
+
+        private void SaveClip_Click(object sender, RoutedEventArgs e)
+        {
+            if (_markStartVal < 0 || _markEndVal <= _markStartVal)
+            {
+                MessageBox.Show("Please mark a valid Start and End keyframe on the timeline first.", "Invalid Range", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            long startMs = _oldestTimeMs + (long)(_markStartVal * 1000.0);
+            long endMs = _oldestTimeMs + (long)(_markEndVal * 1000.0);
+
+            var intersectingSegments = _segments.Where(s => s.EndTime >= startMs && s.StartTime <= endMs).ToList();
+            if (intersectingSegments.Count == 0)
+            {
+                MessageBox.Show("No temporary buffer files found covering this selected range.", "Export Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var saveDialog = new SaveFileDialog
+            {
+                Title = "Save Clipped Video",
+                InitialDirectory = _settings.SavedDir,
+                FileName = $"Clip_{DateTime.Now:yyyyMMdd_HHmmss}",
+                DefaultExt = ".mp4",
+                Filter = "MP4 Video (*.mp4)|*.mp4"
             };
 
             if (saveDialog.ShowDialog() == true)
             {
-                try
+                string targetPath = saveDialog.FileName;
+                string[] filePaths = intersectingSegments.Select(s => s.FilePath).ToArray();
+                double[] startOffsets = intersectingSegments.Select(s => (s.StartTime - _oldestTimeMs) / 1000.0).ToArray();
+
+                BtnSaveClip.IsEnabled = false;
+                BtnSaveClip.Content = "Exporting...";
+
+                Task.Run(() =>
                 {
-                    File.Copy(segment.FilePath, saveDialog.FileName, true);
-                    MessageBox.Show("Clip exported successfully!", "Export Clip", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Failed to export clip: {ex.Message}", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                    bool success = App.ClipVideo(
+                        filePaths,
+                        startOffsets,
+                        filePaths.Length,
+                        _markStartVal,
+                        _markEndVal,
+                        1920, 1080, 20,
+                        targetPath
+                    );
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        BtnSaveClip.IsEnabled = true;
+                        BtnSaveClip.Content = "💾 Save Clip";
+                        
+                        if (success)
+                        {
+                            MessageBox.Show($"Clip saved successfully!\nDestination: {targetPath}", "Export Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                            RefreshSavedClipsList();
+                        }
+                        else
+                        {
+                            MessageBox.Show("Failed to merge and clip temporary files. Check if some segment files were cleaned up.", "Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        }
+                    });
+                });
+            }
+        }
+
+        // Capture Record Button controls
+        private void RecordToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).ToggleRecordingState();
+            UpdateRecordButtonState();
+        }
+
+        private void UpdateRecordButtonState()
+        {
+            if (BtnRecordToggle == null) return;
+            bool active = ((App)Application.Current).IsRecordingActive;
+            if (active)
+            {
+                BtnRecordToggle.Content = "🔴 Recording";
+                BtnRecordToggle.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0x55, 0x55));
+            }
+            else
+            {
+                BtnRecordToggle.Content = "⚫ Stopped";
+                BtnRecordToggle.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x88, 0x88, 0x88));
+            }
+        }
+
+        // Settings / Exit Menu Handlers
+        private void MenuSettings_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).OpenSettingsWindow();
+        }
+
+        private void MenuExit_Click(object sender, RoutedEventArgs e)
+        {
+            ((App)Application.Current).ExitApplication();
+        }
+
+        public void ReloadSettings()
+        {
+            LoadTimelineData();
+            RefreshSavedClipsList();
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!((App)Application.Current).IsExiting)
+            {
+                e.Cancel = true;
+                this.Hide();
+                ((App)Application.Current).ShowMinimizeTrayBalloon();
+            }
+            else
+            {
+                _player.Close();
+                _timer.Stop();
+                base.OnClosing(e);
             }
         }
     }

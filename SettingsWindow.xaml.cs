@@ -25,7 +25,8 @@ namespace ScreenRecorder
 
         private void LoadSettingsIntoUi()
         {
-            TxtOutputDir.Text = _settings.OutputDir;
+            TxtBufferDir.Text = _settings.BufferDir;
+            TxtSavedDir.Text = _settings.SavedDir;
             SldBufferHours.Value = _settings.BufferHours;
             ChkEnableOcr.IsChecked = _settings.EnableOcr;
             ChkShowBorder.IsChecked = _settings.ShowBorderIndicator;
@@ -37,7 +38,6 @@ namespace ScreenRecorder
             CmbMonitors.Items.Clear();
             CmbMonitors.Items.Add("Primary Screen");
             
-            // WinForms Screen helper to find other monitors
             var screens = Screen.AllScreens;
             for (int i = 0; i < screens.Length; i++)
             {
@@ -68,7 +68,8 @@ namespace ScreenRecorder
 
         private void SaveSettingsFromUi()
         {
-            _settings.OutputDir = TxtOutputDir.Text.Trim();
+            _settings.BufferDir = TxtBufferDir.Text.Trim();
+            _settings.SavedDir = TxtSavedDir.Text.Trim();
             _settings.BufferHours = (int)SldBufferHours.Value;
             _settings.EnableOcr = ChkEnableOcr.IsChecked ?? true;
             _settings.ShowBorderIndicator = ChkShowBorder.IsChecked ?? true;
@@ -107,19 +108,33 @@ namespace ScreenRecorder
             }
         }
 
-        private void BrowseButton_Click(object sender, RoutedEventArgs e)
+        private void BrowseBufferButton_Click(object sender, RoutedEventArgs e)
         {
-            // Note: Use WinForms FolderBrowserDialog since it is built-in and works great
             using (var dialog = new FolderBrowserDialog())
             {
-                dialog.Description = "Select Recording Cache Directory";
+                dialog.Description = "Select Hidden Buffer Directory";
                 dialog.UseDescriptionForTitle = true;
-                dialog.SelectedPath = TxtOutputDir.Text;
+                dialog.SelectedPath = TxtBufferDir.Text;
                 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    TxtOutputDir.Text = dialog.SelectedPath;
+                    TxtBufferDir.Text = dialog.SelectedPath;
                     UpdateDiskSpaceEstimate();
+                }
+            }
+        }
+
+        private void BrowseSavedButton_Click(object sender, RoutedEventArgs e)
+        {
+            using (var dialog = new FolderBrowserDialog())
+            {
+                dialog.Description = "Select Saved Clips Export Directory";
+                dialog.UseDescriptionForTitle = true;
+                dialog.SelectedPath = TxtSavedDir.Text;
+                
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    TxtSavedDir.Text = dialog.SelectedPath;
                 }
             }
         }
@@ -145,13 +160,13 @@ namespace ScreenRecorder
 
         private void UpdateDiskSpaceEstimate()
         {
-            if (LblBufferSpaceEstimate == null || LblDiskSpace == null || PrgDiskSpace == null || TxtOutputDir == null) return;
+            if (LblBufferSpaceEstimate == null || LblDiskSpace == null || PrgDiskSpace == null || TxtBufferDir == null) return;
 
             int hours = (int)SldBufferHours.Value;
             double gbEst = hours * 1.5; // ~1.5 GB/hour
             LblBufferSpaceEstimate.Text = $"Est. space requirement: ~{gbEst:F1} GB";
 
-            string path = TxtOutputDir.Text.Trim();
+            string path = TxtBufferDir.Text.Trim();
             if (string.IsNullOrEmpty(path)) return;
 
             try
@@ -169,12 +184,10 @@ namespace ScreenRecorder
 
                 LblDiskSpace.Text = $"{freeGb:F0} GB Free / {totalGb:F0} GB Total";
 
-                // Progress Bar: percent of drive used
                 double usedPct = (usedGb / totalGb) * 100;
                 PrgDiskSpace.Value = usedPct;
 
-                // Color of progress bar: green unless free space is low
-                if (freeGb < gbEst || freeGb < 10) // less than estimated buffer size or less than 10GB
+                if (freeGb < gbEst || freeGb < 10)
                 {
                     PrgDiskSpace.Foreground = System.Windows.Media.Brushes.Tomato;
                     LblDiskWarning.Visibility = Visibility.Visible;
@@ -195,23 +208,29 @@ namespace ScreenRecorder
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            string path = TxtOutputDir.Text.Trim();
-            if (string.IsNullOrEmpty(path))
+            string bufPath = TxtBufferDir.Text.Trim();
+            string savePath = TxtSavedDir.Text.Trim();
+
+            if (string.IsNullOrEmpty(bufPath) || string.IsNullOrEmpty(savePath))
             {
-                MessageBox.Show("Please specify a valid storage folder.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please specify valid folders for both Buffer and Saved directories.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try
             {
-                if (!Directory.Exists(path))
+                if (!Directory.Exists(bufPath))
                 {
-                    Directory.CreateDirectory(path);
+                    Directory.CreateDirectory(bufPath);
+                }
+                if (!Directory.Exists(savePath))
+                {
+                    Directory.CreateDirectory(savePath);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to create folder: {ex.Message}", "Storage Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Failed to create folders: {ex.Message}", "Storage Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
