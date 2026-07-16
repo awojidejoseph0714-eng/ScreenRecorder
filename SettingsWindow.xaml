@@ -1,0 +1,171 @@
+<Window x:Class="ScreenRecorder.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Screen Recorder Settings" Height="580" Width="460"
+        WindowStartupLocation="CenterScreen"
+        Background="Transparent"
+        ResizeMode="NoResize" WindowStyle="None"
+        AllowsTransparency="True">
+    
+    <Window.Resources>
+        <!-- Modern Scrollbar Style -->
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#313244"/>
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="BorderBrush" Value="#45475A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="border" CornerRadius="6" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Background="{TemplateBinding Background}">
+                            <ScrollViewer x:Name="PART_ContentHost" Focusable="false" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="true">
+                                <Setter Property="BorderBrush" TargetName="border" Value="#F38BA8"/>
+                            </Trigger>
+                            <Trigger Property="IsFocused" Value="true">
+                                <Setter Property="BorderBrush" TargetName="border" Value="#F38BA8"/>
+                                <Setter Property="Background" Value="#1E1E2E"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#313244"/>
+            <Setter Property="Foreground" Value="#CDD6F4"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="true">
+                                <Setter Property="Background" Value="#45475A"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="true">
+                                <Setter Property="Background" Value="#585B70"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#F38BA8"/>
+            <Setter Property="Foreground" Value="#11111B"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" CornerRadius="6" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="true">
+                                <Setter Property="Background" Value="#F5C2E7"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="true">
+                                <Setter Property="Background" Value="#EBA0B2"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#1E1E2E" CornerRadius="12" BorderThickness="1" BorderBrush="#313244">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/> <!-- Title Bar -->
+                <RowDefinition Height="*"/>    <!-- Settings Body -->
+                <RowDefinition Height="Auto"/> <!-- Footer Actions -->
+            </Grid.RowDefinitions>
+
+        <!-- 1. Header (Custom Title Bar Window Drag handle) -->
+        <Grid Grid.Row="0" Margin="0,0,0,15" MouseDown="TitleBar_MouseDown">
+            <TextBlock Text="SETTINGS" FontSize="16" FontWeight="Bold" Foreground="#F38BA8" VerticalAlignment="Center"/>
+            <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" Foreground="#A6ADC8" Padding="6,2" Click="CancelButton_Click" VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- 2. Settings Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,15">
+            <StackPanel>
+                
+                <!-- Output Directory -->
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Storage Directory" Margin="0,0,0,5" FontWeight="SemiBold" Foreground="#BAC2DE"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="TxtOutputDir" Grid.Column="0" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <Button x:Name="BtnBrowse" Content="Browse..." Grid.Column="1" Click="BrowseButton_Click" VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+
+                <!-- Buffer Hours -->
+                <StackPanel Margin="0,0,0,15">
+                    <Grid>
+                        <TextBlock Text="Rolling Buffer Length" FontWeight="SemiBold" Foreground="#BAC2DE"/>
+                        <TextBlock x:Name="LblBufferText" Text="24 Hours" HorizontalAlignment="Right" Foreground="#F38BA8" FontWeight="Bold"/>
+                    </Grid>
+                    <Slider x:Name="SldBufferHours" Minimum="1" Maximum="168" Value="24" TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,5,0,2" ValueChanged="BufferHours_ValueChanged"/>
+                    <TextBlock x:Name="LblBufferSpaceEstimate" Text="Est. space: ~36 GB (~1.5 GB/hour)" FontSize="11" Foreground="#A6ADC8"/>
+                </StackPanel>
+
+                <!-- Disk Space Info -->
+                <StackPanel Margin="0,5,0,15">
+                    <Grid>
+                        <TextBlock Text="Target Drive Space" FontSize="11" Foreground="#BAC2DE"/>
+                        <TextBlock x:Name="LblDiskSpace" Text="250 GB Free / 500 GB Total" FontSize="11" HorizontalAlignment="Right" Foreground="#BAC2DE"/>
+                    </Grid>
+                    <ProgressBar x:Name="PrgDiskSpace" Height="6" Background="#313244" Foreground="#A6E3A1" BorderThickness="0" Margin="0,4,0,2" Minimum="0" Maximum="100"/>
+                    <TextBlock x:Name="LblDiskWarning" Text="⚠️ Warning: Free space is low on selected drive!" FontSize="11" Foreground="#F9E2AF" Visibility="Collapsed" FontWeight="Bold"/>
+                </StackPanel>
+
+                <Separator Background="#313244" Margin="0,0,0,15"/>
+
+                <!-- Options checkboxes -->
+                <StackPanel Margin="0,0,0,15">
+                    <CheckBox x:Name="ChkEnableOcr" Content="Index Screen Text (Enable Search)" Foreground="#CDD6F4" IsChecked="True" Margin="0,0,0,10"/>
+                    <CheckBox x:Name="ChkShowBorder" Content="Show Border Recording Indicator" Foreground="#CDD6F4" IsChecked="True"/>
+                </StackPanel>
+
+                <!-- Monitor selection -->
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Record Monitor" Margin="0,0,0,5" FontWeight="SemiBold" Foreground="#BAC2DE"/>
+                    <ComboBox x:Name="CmbMonitors" Background="#313244" Foreground="#CDD6F4" BorderBrush="#45475A" Padding="6,4"/>
+                </StackPanel>
+
+                <Separator Background="#313244" Margin="0,0,0,15"/>
+
+                <!-- Excluded Processes -->
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Excluded Apps (One process name per line, e.g. chrome, notepad)" Margin="0,0,0,5" FontWeight="SemiBold" Foreground="#BAC2DE"/>
+                    <TextBox x:Name="TxtExcludedApps" Height="100" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Padding="6" TextWrapping="Wrap"/>
+                </StackPanel>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 3. Footer Actions -->
+        <Grid Grid.Row="2">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" Click="CancelButton_Click" Width="80" Margin="0,0,10,0"/>
+                <Button Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveButton_Click" Width="80"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+    </Border>
+</Window>

@@ -7,7 +7,7 @@ echo ===================================================
 call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
 
 :: Compile Encoder.cpp into Encoder.dll
-cl /LD /O2 /EHsc Encoder.cpp /link /OUT:Encoder.dll mfplat.lib mfuuid.lib mfreadwrite.lib user32.lib gdi32.lib ole32.lib
+cl /LD /MT /O2 /EHsc Encoder.cpp /link /OUT:Encoder.dll mfplat.lib mfuuid.lib mfreadwrite.lib user32.lib gdi32.lib ole32.lib oleaut32.lib
 
 if %errorlevel% neq 0 (
     echo [ERROR] Failed to compile C++ Encoder.cpp!

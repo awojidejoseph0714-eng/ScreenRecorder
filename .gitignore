@@ -12,3 +12,7 @@ obj/
 .vs/
 *.user
 *.suo
+
+# Build & Release output folders
+publish/
+installer/

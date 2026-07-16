@@ -4,6 +4,8 @@
 #include <mfreadwrite.h>
 #include <mferror.h>
 #include <wrl.h>
+#include <icodecapi.h>
+#include <codecapi.h>
 
 using Microsoft::WRL::ComPtr;
 
@@ -105,6 +107,17 @@ bool InitializeEncoder(const wchar_t* filePath, int width, int height, int fps) 
 
     hr = g_pSinkWriter->SetInputMediaType(g_streamIndex, pInputType.Get(), NULL);
     if (FAILED(hr)) return false;
+
+    // Configure keyframe interval (GOP size) via ICodecAPI
+    ComPtr<ICodecAPI> pCodecAPI = nullptr;
+    hr = g_pSinkWriter->GetServiceForStream(g_streamIndex, GUID_NULL, IID_PPV_ARGS(&pCodecAPI));
+    if (SUCCEEDED(hr) && pCodecAPI != nullptr) {
+        VARIANT var;
+        VariantInit(&var);
+        var.vt = VT_UI4;
+        var.ulVal = fps * 2; // Keyframe every 2 seconds
+        pCodecAPI->SetValue(&CODECAPI_AVEncMPVGOPSize, &var);
+    }
 
     // Begin writing
     hr = g_pSinkWriter->BeginWriting();
