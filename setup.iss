@@ -1,6 +1,6 @@
 [Setup]
 AppName=Screen Recorder
-AppVersion=2.0
+AppVersion=2.1
 AppPublisher=AduraX
 AppPublisherURL=https://github.com/awojidejoseph0714-eng/ScreenRecorder
 DefaultDirName={localappdata}\Programs\ScreenRecorder
