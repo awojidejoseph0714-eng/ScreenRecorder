@@ -123,6 +123,12 @@ namespace ScreenRecorder
             menu.Items.Add(stopItem);
 
             menu.Items.Add(new ToolStripMenuItem("Open Recordings Folder", null, (s, e) => OpenRecordingsFolder()));
+            
+            ToolStripMenuItem startupItem = new ToolStripMenuItem("Start with Windows", null, (s, e) => ToggleStartup());
+            startupItem.Name = "Startup";
+            startupItem.Checked = IsStartupEnabled();
+            menu.Items.Add(startupItem);
+
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(new ToolStripMenuItem("Exit", null, (s, e) => ExitApplication()));
 
@@ -491,6 +497,58 @@ namespace ScreenRecorder
                 {
                     MessageBox.Show($"Failed to open directory: {ex.Message}", "Explorer Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
+            }
+        }
+
+        private bool IsStartupEnabled()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", false))
+                {
+                    if (key == null) return false;
+                    object? val = key.GetValue("ScreenRecorder");
+                    if (val == null) return false;
+                    return val.ToString() == $"\"{Application.ExecutablePath}\"";
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ToggleStartup()
+        {
+            try
+            {
+                bool currentlyEnabled = IsStartupEnabled();
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (key == null) return;
+                    if (currentlyEnabled)
+                    {
+                        key.DeleteValue("ScreenRecorder", false);
+                    }
+                    else
+                    {
+                        key.SetValue("ScreenRecorder", $"\"{Application.ExecutablePath}\"");
+                    }
+                }
+
+                var menu = _notifyIcon.ContextMenuStrip;
+                if (menu != null)
+                {
+                    var startupItem = menu.Items["Startup"] as ToolStripMenuItem;
+                    if (startupItem != null)
+                    {
+                        startupItem.Checked = !currentlyEnabled;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to toggle startup registry key: {ex.Message}", "Startup Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
