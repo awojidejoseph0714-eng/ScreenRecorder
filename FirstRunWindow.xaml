@@ -80,7 +80,7 @@
                     <TextBlock Text="Terms &amp; Privacy Agreement" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" Foreground="#FFFFFF"/>
                     
                     <Border Background="#2B2B2B" BorderBrush="#3D3D3D" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,15">
-                        <TextBlock Text="Privacy Policy: Screen Recorder captures your desktop screen locally. Absolutely zero data is sent to the internet. By checking this, you agree not to distribute or use this tool to capture sensitive or unauthorized data (passwords, banking) belonging to third parties."
+                        <TextBlock Text="Privacy Policy: Screen Recorder captures your desktop screen locally. Screen frames and OCR data are processed and stored only on this device. By checking this, you agree not to distribute or use this tool to capture sensitive or unauthorized data (passwords, banking) belonging to third parties."
                                    TextWrapping="Wrap" FontSize="11" Foreground="#CCCCCC" LineHeight="16"/>
                     </Border>
 

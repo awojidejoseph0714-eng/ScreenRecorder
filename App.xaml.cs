@@ -83,6 +83,9 @@ namespace ScreenRecorder
         {
             base.OnStartup(e);
 
+            // Handle session ending (Windows shutdown / logoff)
+            this.SessionEnding += App_SessionEnding;
+
             // Enforce single instance
             bool createdNew;
             _mutex = new Mutex(true, "ScreenRecorderV2-SingleInstanceMutex", out createdNew);
@@ -707,6 +710,11 @@ namespace ScreenRecorder
             }
 
             Shutdown();
+        }
+
+        private void App_SessionEnding(object sender, SessionEndingCancelEventArgs e)
+        {
+            ExitApplication();
         }
 
         // Win32 cursor capture declarations

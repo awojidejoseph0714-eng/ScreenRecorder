@@ -215,6 +215,7 @@ bool ClipVideo(const wchar_t** filePaths, const double* fileStartOffsets, int fi
 
     bool hasSetActualStart = false;
     double actualClipStartSec = clipStartSec;
+    LONGLONG nextSampleTime = 0;
 
     for (int i = 0; i < fileCount; i++) {
         ComPtr<IMFSourceReader> pReader = nullptr;
@@ -255,11 +256,16 @@ bool ClipVideo(const wchar_t** filePaths, const double* fileStartOffsets, int fi
 
                 if (hasSetActualStart) {
                     if (absTimeSec <= clipEndSec) {
-                        // Set adjusted sample time relative to actual start
-                        LONGLONG adjustedTime = (LONGLONG)((absTimeSec - actualClipStartSec) * 10000000.0);
-                        hr = pSample->SetSampleTime(adjustedTime);
+                        LONGLONG sampleDuration = 0;
+                        pSample->GetSampleDuration(&sampleDuration);
+                        if (sampleDuration <= 0) {
+                            sampleDuration = 10000000ULL / fps;
+                        }
+
+                        hr = pSample->SetSampleTime(nextSampleTime);
                         if (SUCCEEDED(hr)) {
                             pSinkWriter->WriteSample(outStreamIndex, pSample.Get());
+                            nextSampleTime += sampleDuration;
                         }
                     }
                 }

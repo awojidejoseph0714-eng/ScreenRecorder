@@ -130,6 +130,62 @@ namespace ScreenRecorder
             using (var cmd = new SqliteCommand(createSegmentsTable, conn)) cmd.ExecuteNonQuery();
             using (var cmd = new SqliteCommand(createOcrTable, conn)) cmd.ExecuteNonQuery();
             using (var cmd = new SqliteCommand(createFtsTable, conn)) cmd.ExecuteNonQuery();
+
+            // Run database recovery / repair on startup
+            RepairUnfinishedSegments();
+        }
+
+        private void RepairUnfinishedSegments()
+        {
+            try
+            {
+                using var conn = new SqliteConnection($"Data Source={_dbPath}");
+                conn.Open();
+
+                var unfinished = new List<(long Id, string FilePath, long StartTime)>();
+
+                using (var cmd = new SqliteCommand("SELECT id, filepath, start_time FROM segments WHERE end_time IS NULL OR end_time = 0", conn))
+                {
+                    using var reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        unfinished.Add((reader.GetInt64(0), reader.GetString(1), reader.GetInt64(2)));
+                    }
+                }
+
+                foreach (var seg in unfinished)
+                {
+                    if (File.Exists(seg.FilePath))
+                    {
+                        // Calculate actual duration from last write time of the file
+                        var lastWrite = File.GetLastWriteTimeUtc(seg.FilePath);
+                        long writeMs = new DateTimeOffset(lastWrite).ToUnixTimeMilliseconds();
+                        long duration = writeMs - seg.StartTime;
+                        
+                        if (duration <= 0) duration = 60000; // fallback to 1 minute segment
+                        
+                        using var updateCmd = new SqliteCommand("UPDATE segments SET end_time = $end WHERE id = $id", conn);
+                        updateCmd.Parameters.AddWithValue("$end", seg.StartTime + duration);
+                        updateCmd.Parameters.AddWithValue("$id", seg.Id);
+                        updateCmd.ExecuteNonQuery();
+                        
+                        Debug.WriteLine($"Repaired unfinished segment {seg.FilePath} to end at {seg.StartTime + duration}");
+                    }
+                    else
+                    {
+                        // File doesn't exist, remove orphaned row
+                        using var deleteCmd = new SqliteCommand("DELETE FROM segments WHERE id = $id", conn);
+                        deleteCmd.Parameters.AddWithValue("$id", seg.Id);
+                        deleteCmd.ExecuteNonQuery();
+
+                        Debug.WriteLine($"Removed orphaned database entry for missing file: {seg.FilePath}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to repair unfinished segments: {ex.Message}");
+            }
         }
 
         public long RegisterSegment(string filepath, long startTime)
@@ -474,46 +530,41 @@ namespace ScreenRecorder
             }
 
             // --- Smart Grouping / Deduplication Algorithm ---
-            // Sort raw results by FilePath, then by OffsetSeconds (ascending)
-            rawResults.Sort((a, b) =>
-            {
-                int fileComp = string.Compare(a.FilePath, b.FilePath, StringComparison.Ordinal);
-                if (fileComp != 0) return fileComp;
-                return a.OffsetSeconds.CompareTo(b.OffsetSeconds);
-            });
+            // Sort raw results chronologically by absolute Timestamp (ascending)
+            rawResults.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
 
             SearchResult? currentGroup = null;
-            double groupStartOffset = 0;
-            double groupEndOffset = 0;
+            DateTime groupStartTimestamp = DateTime.MinValue;
+            DateTime groupEndTimestamp = DateTime.MinValue;
 
             foreach (var item in rawResults)
             {
                 if (currentGroup == null)
                 {
                     currentGroup = item;
-                    groupStartOffset = item.OffsetSeconds;
-                    groupEndOffset = item.OffsetSeconds;
+                    groupStartTimestamp = item.Timestamp;
+                    groupEndTimestamp = item.Timestamp;
                 }
-                else if (item.FilePath == currentGroup.FilePath && item.OffsetSeconds - groupEndOffset <= 8.0)
+                else if ((item.Timestamp - groupEndTimestamp).TotalSeconds <= 8.0)
                 {
-                    // Contiguous match (within 8 seconds), extend the current range
-                    groupEndOffset = item.OffsetSeconds;
+                    // Contiguous match (within 8 seconds), bridge across files seamlessly!
+                    groupEndTimestamp = item.Timestamp;
                 }
                 else
                 {
                     // Finalize previous group
-                    FinalizeGroup(results, currentGroup, groupStartOffset, groupEndOffset);
+                    FinalizeGroup(results, currentGroup, groupStartTimestamp, groupEndTimestamp);
 
                     // Start new group
                     currentGroup = item;
-                    groupStartOffset = item.OffsetSeconds;
-                    groupEndOffset = item.OffsetSeconds;
+                    groupStartTimestamp = item.Timestamp;
+                    groupEndTimestamp = item.Timestamp;
                 }
             }
 
             if (currentGroup != null)
             {
-                FinalizeGroup(results, currentGroup, groupStartOffset, groupEndOffset);
+                FinalizeGroup(results, currentGroup, groupStartTimestamp, groupEndTimestamp);
             }
 
             // Sort finalized grouped results by Timestamp descending (latest matches first)
@@ -522,24 +573,18 @@ namespace ScreenRecorder
             return results;
         }
 
-        private void FinalizeGroup(List<SearchResult> list, SearchResult baseResult, double startOffset, double endOffset)
+        private void FinalizeGroup(List<SearchResult> list, SearchResult baseResult, DateTime startClock, DateTime endClock)
         {
-            string timeRangeLabel = $"[{FormatOffset(startOffset)} - {FormatOffset(endOffset)}]";
+            string timeRangeLabel = $"[{startClock:HH:mm:ss} - {endClock:HH:mm:ss}]";
             string snippet = baseResult.Text.Length > 160 ? baseResult.Text.Substring(0, 160) + "..." : baseResult.Text;
 
             list.Add(new SearchResult
             {
                 FilePath = baseResult.FilePath,
-                OffsetSeconds = startOffset, // Clicking jumps to the start of the text appearance
+                OffsetSeconds = baseResult.OffsetSeconds, // Clicking jumps to the starting file and offset
                 Text = $"{timeRangeLabel}\n{snippet}",
-                Timestamp = baseResult.Timestamp
+                Timestamp = startClock
             });
-        }
-
-        private string FormatOffset(double seconds)
-        {
-            TimeSpan t = TimeSpan.FromSeconds(seconds);
-            return $"{(int)t.TotalMinutes:D2}:{t.Seconds:D2}";
         }
 
         public void Dispose()
