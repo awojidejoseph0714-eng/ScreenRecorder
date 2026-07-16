@@ -12,7 +12,7 @@ No cloud, no AI APIs, and no enterprise bloat. Just your recordings on your disk
 
 ---
 
-## ✨ Features
+## Features
 
 - **Ambient Capture**: Efficiently records your chosen monitor at 20 FPS in the background.
 - **Optimized Video Seeking**: Strict Group of Pictures (GOP) keyframe spacing built into the native H.264 encoder, enabling **instant, frame-accurate timeline scrubbing**.
@@ -24,7 +24,7 @@ No cloud, no AI APIs, and no enterprise bloat. Just your recordings on your disk
 
 ---
 
-## 📂 Data Directories
+##  Data Directories
 
 Your data and settings are kept strictly separate from the application binaries, ensuring that upgrading or uninstalling the app **never deletes your recordings**:
 
@@ -37,7 +37,7 @@ Your data and settings are kept strictly separate from the application binaries,
 
 ---
 
-## 🛠️ How to Build from Source
+##  How to Build from Source
 
 ### Prerequisites
 - Windows 10 (Build 19041+) or Windows 11.
@@ -63,4 +63,4 @@ This publishes the C# project in self-contained mode (bundling all required .NET
 
 ## 📜 License
 
-This project is open-source and free to modify or distribute. No telemetry, tracking, or cloud uploads exist.
+This project is open-source and free to modify or distribute.
