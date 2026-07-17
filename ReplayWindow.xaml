@@ -122,6 +122,7 @@
             <Menu Grid.Row="0" Background="#2B2B2B" Foreground="#FFFFFF" Margin="-15,-15,-15,10">
                 <MenuItem Header="File" Foreground="#FFFFFF" Padding="12,5">
                     <MenuItem Header="Settings..." Click="MenuSettings_Click" Foreground="#000000"/>
+                    <MenuItem Header="Check for Updates..." Click="MenuCheckUpdates_Click" Foreground="#000000"/>
                     <Separator/>
                     <MenuItem Header="Exit" Click="MenuExit_Click" Foreground="#000000"/>
                 </MenuItem>
@@ -132,6 +133,7 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="SCREEN WORKSTATION PLAYER" FontSize="15" FontWeight="Bold" Foreground="#CCCCCC" VerticalAlignment="Center"/>
                     <TextBlock x:Name="LblCurrentPlayTime" Text="[No active video]" Margin="20,0,0,0" FontSize="12" Foreground="#888888" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LblUpdateStatus" Text="" Margin="20,0,0,0" FontSize="12" Foreground="#88D49E" FontWeight="Bold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Button Content="✕" HorizontalAlignment="Right" Background="Transparent" Foreground="#888888" Padding="6,2" Click="ExitButton_Click" VerticalAlignment="Center"/>
             </Grid>

@@ -54,6 +54,15 @@ namespace ScreenRecorder
             LoadTimelineData();
             RefreshSavedClipsList();
 
+            // Bind Updater events
+            Updater.StatusChanged += Updater_StatusChanged;
+
+            // Trigger silent background update check on startup if enabled
+            if (_settings.AutoUpdateCheck)
+            {
+                Task.Run(() => Updater.CheckForUpdatesAsync(silentOnLatest: true));
+            }
+
             // Default to OCR Search tab
             SelectTab(true);
         }
@@ -637,6 +646,19 @@ namespace ScreenRecorder
             ((App)Application.Current).ExitApplication();
         }
 
+        private void Updater_StatusChanged(string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                LblUpdateStatus.Text = status;
+            });
+        }
+
+        private async void MenuCheckUpdates_Click(object sender, RoutedEventArgs e)
+        {
+            await Updater.CheckForUpdatesAsync(silentOnLatest: false);
+        }
+
         public void ReloadSettings()
         {
             LoadTimelineData();
@@ -653,6 +675,9 @@ namespace ScreenRecorder
             }
             else
             {
+                // Clean up update subscriptions on exit
+                Updater.StatusChanged -= Updater_StatusChanged;
+
                 _player.Close();
                 _timer.Stop();
                 base.OnClosing(e);

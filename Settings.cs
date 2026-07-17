@@ -15,6 +15,7 @@ namespace ScreenRecorder
         public bool EnableOcr { get; set; } = true;
         public string SelectedMonitor { get; set; } = "Primary";
         public bool ShowBorderIndicator { get; set; } = true;
+        public bool AutoUpdateCheck { get; set; } = true;
 
         // Hotkeys
         public uint RecordHotkeyModifiers { get; set; } = 0x0003; // Ctrl + Alt

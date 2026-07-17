@@ -46,5 +46,5 @@ if %errorlevel% neq 0 (
 echo ===================================================
 echo Installer Built Successfully!
 echo ===================================================
-echo Location: installer\ScreenRecorder_Setup.exe
+echo Location: installer\ScreenRecorder-v2.1-Setup.exe
 echo ===================================================

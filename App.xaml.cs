@@ -712,6 +712,61 @@ namespace ScreenRecorder
             Shutdown();
         }
 
+        public void FactoryResetAndExit()
+        {
+            _isExiting = true;
+
+            // 1. Close player UI
+            if (_replayWindow != null)
+            {
+                try { _replayWindow.Close(); } catch { }
+            }
+
+            // 2. Stop capture loop and release database connections
+            StopRecording();
+            _ocrIndexer.Dispose();
+            _cleanupTimer?.Dispose();
+            _hotkeyManager?.Dispose();
+
+            if (_notifyIcon != null)
+            {
+                _notifyIcon.Visible = false;
+                _notifyIcon.Dispose();
+            }
+
+            // 3. Clear autostart registry key
+            try
+            {
+                string runKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, true))
+                {
+                    key?.DeleteValue("ScreenRecorder", false);
+                }
+            }
+            catch { }
+
+            // 4. Wipe AppData configuration & buffer directory
+            try
+            {
+                string appDataPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ScreenRecorderV2"
+                );
+                if (Directory.Exists(appDataPath))
+                {
+                    System.Threading.Thread.Sleep(300); // Allow file locks to release
+                    Directory.Delete(appDataPath, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Wiped registry and indices, but some temporary files under AppData could not be removed: {ex.Message}", "Factory Reset Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+
+            // 5. Exit application
+            Shutdown();
+        }
+
         private void App_SessionEnding(object sender, SessionEndingCancelEventArgs e)
         {
             ExitApplication();

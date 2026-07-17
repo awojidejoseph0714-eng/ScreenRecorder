@@ -1,0 +1,48 @@
+name: Compile and Publish Screen Recorder v2.1
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Compile Native C++ Encoder DLL
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cl /LD /MT /O2 /EHsc Encoder.cpp /link /OUT:Encoder.dll mfplat.lib mfuuid.lib mfreadwrite.lib user32.lib gdi32.lib ole32.lib oleaut32.lib
+
+      - name: Publish Self-Contained WPF Application
+        run: |
+          dotnet publish -c Release -r win-x64 --self-contained true -o publish
+
+      - name: Copy Native DLL to Publish Directory
+        shell: pwsh
+        run: |
+          Copy-Item -Path "Encoder.dll" -Destination "publish\" -Force
+
+      - name: Compile Inno Setup Installer
+        shell: pwsh
+        run: |
+          & "iscc" setup.iss
+
+      - name: Create GitHub Release and Upload Installer
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/ScreenRecorder-v2.1-Setup.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

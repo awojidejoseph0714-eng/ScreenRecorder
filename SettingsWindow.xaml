@@ -152,7 +152,8 @@
                     <!-- Options checkboxes -->
                     <StackPanel Margin="0,0,0,15">
                         <CheckBox x:Name="ChkEnableOcr" Content="Index Screen Text (Enable Search)" Foreground="#FFFFFF" IsChecked="True" Margin="0,0,0,10"/>
-                        <CheckBox x:Name="ChkShowBorder" Content="Show Border Recording Indicator" Foreground="#FFFFFF" IsChecked="True"/>
+                        <CheckBox x:Name="ChkShowBorder" Content="Show Border Recording Indicator" Foreground="#FFFFFF" IsChecked="True" Margin="0,0,0,10"/>
+                        <CheckBox x:Name="ChkAutoUpdate" Content="Check for updates automatically on startup" Foreground="#FFFFFF" IsChecked="True"/>
                     </StackPanel>
 
                     <!-- Monitor selection -->
@@ -167,6 +168,18 @@
                     <StackPanel Margin="0,0,0,15">
                         <TextBlock Text="Excluded Apps (One process name per line, e.g. chrome, notepad)" Margin="0,0,0,5" FontWeight="SemiBold" Foreground="#CCCCCC"/>
                         <TextBox x:Name="TxtExcludedApps" Height="100" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" Padding="6" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <!-- Danger Zone (Factory Reset / Wipe all Traces) -->
+                    <StackPanel Margin="0,15,0,15">
+                        <TextBlock Text="Danger Zone" Margin="0,0,0,5" FontWeight="SemiBold" Foreground="#FF5555"/>
+                        <Border BorderBrush="#FF5555" BorderThickness="1" CornerRadius="6" Padding="12" Background="#2A1B1B">
+                            <StackPanel>
+                                <TextBlock Text="Wipe all local recordings, database search indexes, application configurations, and startup Registry keys. This deletes all traces of Screen Recorder from this user account."
+                                           TextWrapping="Wrap" FontSize="11" Foreground="#FFCCCC" Margin="0,0,0,10" LineHeight="15"/>
+                                <Button x:Name="BtnFactoryReset" Content="Factory Reset (Wipe All Data)" Click="FactoryResetButton_Click" Background="#FF5555" Foreground="#FFFFFF" Padding="12,6" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
 
                 </StackPanel>

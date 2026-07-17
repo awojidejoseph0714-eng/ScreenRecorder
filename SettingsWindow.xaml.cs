@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Forms;
 using MessageBox = System.Windows.MessageBox;
+using Application = System.Windows.Application;
 
 namespace ScreenRecorder
 {
@@ -30,6 +31,7 @@ namespace ScreenRecorder
             SldBufferHours.Value = _settings.BufferHours;
             ChkEnableOcr.IsChecked = _settings.EnableOcr;
             ChkShowBorder.IsChecked = _settings.ShowBorderIndicator;
+            ChkAutoUpdate.IsChecked = _settings.AutoUpdateCheck;
 
             // Load Excluded Apps (one per line)
             TxtExcludedApps.Text = string.Join(Environment.NewLine, _settings.ExcludedProcesses);
@@ -73,6 +75,7 @@ namespace ScreenRecorder
             _settings.BufferHours = (int)SldBufferHours.Value;
             _settings.EnableOcr = ChkEnableOcr.IsChecked ?? true;
             _settings.ShowBorderIndicator = ChkShowBorder.IsChecked ?? true;
+            _settings.AutoUpdateCheck = ChkAutoUpdate.IsChecked ?? true;
 
             // Process exclusions list
             _settings.ExcludedProcesses = TxtExcludedApps.Text
@@ -241,6 +244,25 @@ namespace ScreenRecorder
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private void FactoryResetButton_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show(
+                "⚠️ WARNING: This will permanently delete ALL local rolling buffer videos, search index databases, configuration settings, and registry autostart keys. Your exported clips in Videos will not be deleted.\n\nAre you absolutely sure you want to proceed?",
+                "Factory Reset - Confirm Wipe",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning
+            );
+
+            if (confirm == MessageBoxResult.Yes)
+            {
+                if (Application.Current is App appInstance)
+                {
+                    this.Close(); // Close settings dialog first
+                    appInstance.FactoryResetAndExit();
+                }
+            }
         }
     }
 }
