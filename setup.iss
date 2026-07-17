@@ -40,6 +40,15 @@ Filename: "{app}\ScreenRecorder.exe"; Description: "Launch Screen Recorder"; \
     Flags: nowait postinstall skipifsilent
 
 [Code]
+function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  Result := True;
+  // Terminate any running instances before setup copies files
+  Exec('taskkill', '/f /im ScreenRecorder.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+end;
+
 function InitializeUninstall(): Boolean;
 var
   ErrorCode: Integer;
