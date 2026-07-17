@@ -12,7 +12,7 @@ namespace ScreenRecorder
 {
     public static class Updater
     {
-        public static readonly string CurrentVersion = "2.1";
+        public static readonly string CurrentVersion = "2.1.0";
         private const string RepoUrl = "https://api.github.com/repos/awojidejoseph0714-eng/ScreenRecorder/releases/latest";
 
         public static event Action<double>? DownloadProgressChanged;
@@ -41,7 +41,7 @@ namespace ScreenRecorder
                     return;
                 }
 
-                string latestTag = tagProp.GetString() ?? "v2.1";
+                string latestTag = tagProp.GetString() ?? "v2.1.0";
                 string latestVerStr = latestTag.TrimStart('v', 'V');
 
                 // Strip pre-release suffix (e.g., "2.2.0-beta" -> "2.2.0")
@@ -75,10 +75,14 @@ namespace ScreenRecorder
                 {
                     foreach (var asset in assetsProp.EnumerateArray())
                     {
-                        if (asset.TryGetProperty("name", out var nameProp) && nameProp.GetString() == "ScreenRecorder_Setup.exe")
+                        if (asset.TryGetProperty("name", out var nameProp))
                         {
-                            downloadUrl = asset.GetProperty("browser_download_url").GetString();
-                            break;
+                            string? assetName = nameProp.GetString();
+                            if (assetName != null && assetName.EndsWith("Setup.exe", StringComparison.OrdinalIgnoreCase))
+                            {
+                                downloadUrl = asset.GetProperty("browser_download_url").GetString();
+                                break;
+                            }
                         }
                     }
                 }

@@ -1,6 +1,6 @@
 [Setup]
 AppName=Screen Recorder
-AppVersion=2.1
+AppVersion=2.1.0
 AppPublisher=AduraX
 AppPublisherURL=https://github.com/awojidejoseph0714-eng/ScreenRecorder
 DefaultDirName={localappdata}\Programs\ScreenRecorder
@@ -15,7 +15,7 @@ WizardStyle=modern
 AppMutex=ScreenRecorderV2-SingleInstanceMutex
 UninstallDisplayIcon={app}\ScreenRecorder.exe
 OutputDir=installer
-OutputBaseFilename=ScreenRecorder-v2.1-Setup
+OutputBaseFilename=ScreenRecorder-v2.1.0-Setup
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop icon"; GroupDescription: "Options:"

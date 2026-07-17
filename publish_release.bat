@@ -22,14 +22,14 @@ if %errorlevel% neq 0 (
 )
 
 :: Verify that the installer exists
-if not exist installer\ScreenRecorder-v2.1-Setup.exe (
-    echo [ERROR] Could not find installer\ScreenRecorder-v2.1-Setup.exe!
+if not exist installer\ScreenRecorder-v2.1.0-Setup.exe (
+    echo [ERROR] Could not find installer\ScreenRecorder-v2.1.0-Setup.exe!
     echo Please run build_installer.bat first to build the installer before publishing.
     exit /b 1
 )
 
 :: Prompt for version tag
-set /p TAG="Enter release tag name (e.g. v2.1): "
+set /p TAG="Enter release tag name (e.g. v2.1.0): "
 if "%TAG%"=="" (
     echo [ERROR] Tag name cannot be empty!
     exit /b 1
@@ -38,7 +38,7 @@ if "%TAG%"=="" (
 :: Validate tag format starts with v
 echo %TAG% | findstr /R "^v[0-9]" >nul
 if %errorlevel% neq 0 (
-    echo [WARNING] Release tags usually start with 'v' followed by a number (e.g., v2.1).
+    echo [WARNING] Release tags usually start with 'v' followed by a number (e.g., v2.1.0).
     set /p CONFIRM="Are you sure you want to use tag '%TAG%'? (y/n): "
     if /I "!CONFIRM!" neq "y" exit /b 1
 )
@@ -62,7 +62,7 @@ if %errorlevel% neq 0 (
 if "%HAS_GH%"=="1" (
     echo.
     echo Creating release and uploading installer using gh CLI...
-    gh release create %TAG% installer\ScreenRecorder-v2.1-Setup.exe --title "Release %TAG%" --notes "Screen Recorder %TAG% Release"
+    gh release create %TAG% installer\ScreenRecorder-v2.1.0-Setup.exe --title "Release %TAG%" --notes "Screen Recorder %TAG% Release"
     if %errorlevel% neq 0 (
         echo [WARNING] Local release creation via gh CLI failed. 
         echo The tag has been pushed, so GitHub Actions should automatically build and publish.

@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-release:
     runs-on: windows-2022
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
@@ -41,7 +43,7 @@ jobs:
       - name: Create GitHub Release and Upload Installer
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/ScreenRecorder-v2.1-Setup.exe
+          files: installer/ScreenRecorder-v2.1.0-Setup.exe
           draft: false
           prerelease: false
         env:
