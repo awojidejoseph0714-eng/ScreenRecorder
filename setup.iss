@@ -27,7 +27,7 @@ Source: "publish\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
 [Icons]
 Name: "{group}\Screen Recorder"; Filename: "{app}\ScreenRecorder.exe"
 Name: "{group}\Uninstall Screen Recorder"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\Screen Recorder"; Filename: "{app}\ScreenRecorder.exe"; Tasks: desktopicon
+Name: "{userdesktop}\Screen Recorder"; Filename: "{app}\ScreenRecorder.exe"; Tasks: desktopicon
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
@@ -43,19 +43,53 @@ Filename: "{app}\ScreenRecorder.exe"; Description: "Launch Screen Recorder"; \
 function InitializeSetup(): Boolean;
 var
   ErrorCode: Integer;
+  Retries: Integer;
 begin
   Result := True;
-  // Terminate any running instances before setup copies files
-  Exec('taskkill', '/f /im ScreenRecorder.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  
+  // Try to kill the process using taskkill (with absolute path)
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im ScreenRecorder.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  
+  // Check if it's still running and wait/retry a few times
+  Retries := 0;
+  while CheckForMutexes('ScreenRecorderV2-SingleInstanceMutex') and (Retries < 10) do
+  begin
+    Sleep(200);
+    Retries := Retries + 1;
+  end;
+  
+  // If it's still running, prompt the user
+  if CheckForMutexes('ScreenRecorderV2-SingleInstanceMutex') then
+  begin
+    MsgBox('Screen Recorder is still running. Please close it before continuing with the installation.', mbCriticalError, MB_OK);
+    Result := False;
+  end;
 end;
 
 function InitializeUninstall(): Boolean;
 var
   ErrorCode: Integer;
+  Retries: Integer;
 begin
   Result := True;
-  // Gracefully/forcefully terminate running app instances before uninstalling files
-  Exec('taskkill', '/f /im ScreenRecorder.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  
+  // Try to kill the process using taskkill (with absolute path)
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im ScreenRecorder.exe', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  
+  // Check if it's still running and wait/retry a few times
+  Retries := 0;
+  while CheckForMutexes('ScreenRecorderV2-SingleInstanceMutex') and (Retries < 10) do
+  begin
+    Sleep(200);
+    Retries := Retries + 1;
+  end;
+  
+  // If it's still running, prompt the user
+  if CheckForMutexes('ScreenRecorderV2-SingleInstanceMutex') then
+  begin
+    MsgBox('Screen Recorder is still running. Please close it from the system tray before uninstalling.', mbCriticalError, MB_OK);
+    Result := False;
+  end;
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
